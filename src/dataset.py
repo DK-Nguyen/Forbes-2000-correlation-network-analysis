@@ -6,9 +6,12 @@ from googlesearch import search
 from tqdm import tqdm
 import yfinance as yf
 import matplotlib.pyplot as plt
-import threading
-
-thread_local = threading.local()
+from copy import deepcopy
+from threading import Thread
+import pdb
+import traceback
+import sys
+from functools import reduce
 
 # A logger for this file
 log = logging.getLogger(__name__)
@@ -21,36 +24,37 @@ def scraping_forbes_2000(output_path: str):
     """
     if Path(output_path).exists():
         log.info(f"{output_path} exists, do nothing")
-    else:
-        headers = {
-            "accept": "application/json, text/plain, */*",
-            "referer": "https://www.forbes.com/global2000/",
-            "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.67 Safari/537.36",
-        }
+        return
 
-        cookies = {
-            "notice_behavior": "expressed,eu",
-            "notice_gdpr_prefs": "0,1,2:1a8b5228dd7ff0717196863a5d28ce6c",
-        }
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "referer": "https://www.forbes.com/global2000/",
+        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.67 Safari/537.36",
+    }
 
-        api_url = "https://www.forbes.com/forbesapi/org/global2000/2020/position/true.json?limit=2000"
-        response = requests.get(api_url, headers=headers, cookies=cookies).json()
+    cookies = {
+        "notice_behavior": "expressed,eu",
+        "notice_gdpr_prefs": "0,1,2:1a8b5228dd7ff0717196863a5d28ce6c",
+    }
 
-        sample_table = [
-            [
-                item["organizationName"],
-                item["country"],
-                item["revenue"],
-                item["profits"],
-                item["assets"],
-                item["marketValue"]
-            ] for item in
-            sorted(response["organizationList"]["organizationsLists"], key=lambda k: k["position"])
-        ]
+    api_url = "https://www.forbes.com/forbesapi/org/global2000/2020/position/true.json?limit=2000"
+    response = requests.get(api_url, headers=headers, cookies=cookies).json()
 
-        df = pd.DataFrame(sample_table, columns=["Company", "Country", "Sales", "Profits", "Assets", "Market Value"])
-        df.to_csv(output_path, index=False)
-        log.info(f"save forbes 2000 companies data to {output_path}")
+    sample_table = [
+        [
+            item["organizationName"],
+            item["country"],
+            item["revenue"],
+            item["profits"],
+            item["assets"],
+            item["marketValue"]
+        ] for item in
+        sorted(response["organizationList"]["organizationsLists"], key=lambda k: k["position"])
+    ]
+
+    df = pd.DataFrame(sample_table, columns=["Company", "Country", "Sales", "Profits", "Assets", "Market Value"])
+    df.to_csv(output_path, index=False)
+    log.info(f"save forbes 2000 companies data to {output_path}")
 
 
 def name_convert(company_name: str):
@@ -78,14 +82,32 @@ def name_convert(company_name: str):
     return ticker
 
 
-def get_company_tickers(forbes_2000_path: str, output_path: Path):
+def add_string_to_path(file_path: Path, string: str) -> Path:
     """
-    Get the stock data in 10 years
-    :param forbes_2000_path:
-    :param output_path:
+    Add a string to a name for a file, for example: from data.csv to data1.csv
+    :param file_path:
+    :param string:
     :return:
     """
-    df = pd.read_csv(forbes_2000_path)
+    file_name = file_path.name
+    name, suffix = file_name.split(sep='.')
+    new_file_name = name + string + '.' + suffix
+    return file_path.parent/new_file_name
+
+
+def get_company_tickers(company_path: Path, output_path: Path):
+    """
+    Get the stock data in 10 years
+    :param company_path: path to the csv file that contains the names of the companies
+    :param output_path: the path to save the ticker data to
+    :return:
+    """
+    if output_path.exists():
+        log.info(f"{output_path} exists, do nothing")
+        return
+
+    log.info("Getting company tickers from names...")
+    df = pd.read_csv(company_path)
     company_names = df['Company'].to_list()
     names_tickers = {}
 
@@ -98,28 +120,112 @@ def get_company_tickers(forbes_2000_path: str, output_path: Path):
             log.exception(ex)
             names_tickers[f'err{counter}'] = ' '
         counter += 1
-        if counter % 10 == 0:
-            # save the names and tickers
-            new_output_path = add_counter_path(output_path, int(counter/10))
+        if counter % 100 == 0:
+            # save the names and tickers every 100 iterations
+            new_output_path = add_string_to_path(output_path, str(int(counter/100)))
             df = pd.DataFrame.from_dict(data=names_tickers, orient='index')
             df.to_csv(new_output_path, header=False)
 
+    # save the final file to the path
+    df = pd.DataFrame.from_dict(data=names_tickers, orient='index')
+    df.to_csv(output_path, header=False)
 
-def add_counter_path(file_path: Path, counter: int) -> Path:
+
+def process_tickers(tickers_path: Path, output_path: Path):
     """
-    Add a counter to a name for a file, for example: from data.csv to data1.csv
-    :param file_path:
-    :param counter:
+    Process the companies' ticker data
+    :param tickers_path: the path of the ticker data .csv file
+    :param output_path: the path to save the processed tickers data
     :return:
     """
-    file_name = file_path.name
-    name, suffix = file_name.split(sep='.')
-    new_file_name = name + str(counter) + '.' + suffix
-    return file_path.parent/new_file_name
+    if output_path.exists():
+        log.info(f"{output_path} exists, do nothing")
+        return
+
+    df = pd.read_csv(tickers_path, header=None)
+    tickers = df[1]
+    output = deepcopy(df)
+
+    invalid_tickers = [(i, t) for (i, t) in enumerate(tickers)
+                       if '.html' in t or t == 'history' or t == 'profile' or t == 'news' or t == '1']
+    invalid_indexes = [x[0] for x in invalid_tickers]
+    invalid_companies = [(i, df[0][i]) for i in invalid_indexes]
+    if len(invalid_companies) > 0:
+        log.warning(f"These companies have invalid tickers: {invalid_companies}")
+        output.drop(invalid_indexes, axis=0, inplace=True)
+
+    # drop duplicated values
+    output.drop_duplicates(1, keep='first', inplace=True)
+    log.info(f"Remove {len(df)-len(output)} companies that have invalid tickers, "
+             f"there are {len(output)} companies left")
+
+    # save the processed data to csv file
+    log.info(f"Save processed tickers to {output_path}")
+    output.to_csv(output_path, header=False, index=False)
 
 
-# def get_stock_data():
-    # data = yf.download(tickers="nok", period="10y", interval="1d")
-    # open_data = data['Open']
-    # open_data.plot()
-    # plt.show()
+def get_stock_data(tickers_path: Path, output_path: Path):
+    """
+    Get the stock data for the companies with tickers in in the tickers_path
+    :param tickers_path:
+    :param output_path:
+    :return:
+    """
+    if output_path.exists():
+        log.info(f"{output_path} exists, do nothing")
+        return
+
+    df = pd.read_csv(tickers_path, header=None)
+    tickers = df[1].to_list()
+
+    # index = download_stock_data(tickers[0]).index.to_list()
+    # stock_data = {}
+    stocks = []
+    for t in tqdm(tickers):
+        # stock_data[t] = download_stock_data(t)
+        df_t = pd.DataFrame(download_stock_data(t))
+        df_t.rename(columns={'Open': t}, inplace=True)
+        if len(df_t) > 0:
+            stocks.append(df_t)
+        else:
+            log.info(f"No stock data found for {t}. Skip it")
+
+    # remove entries with no data downloaded
+    # stock_data2 = {}
+    # for key, value in stock_data.items():
+    #     if len(value) > 0:
+    #         stock_data2[key] = value
+
+    try:
+        output_df = reduce(lambda left, right: left.merge(right, how='left', on='Date'), stocks)
+        output_df.fillna(0, inplace=True)
+        output_df.to_csv(output_path, header=True, index=True)
+        log.info(f"Save stock data of tickers to {output_path}")
+    except Exception as e:
+        ex_type, value, tb = sys.exc_info()
+        traceback.print_exc()
+        pdb.post_mortem(tb)
+        log.exception(e)
+
+
+def download_stock_data(ticker: str):
+    data = yf.download(tickers=ticker, period="10y", interval="1d")
+    return data['Open']
+
+
+def download_stock_data_thread(ticker: str, stock_data):
+    data = yf.download(tickers=ticker, period="10y", interval="1d")
+    stock_data[ticker] = data['Open']
+
+
+def get_stock_data_thread(tickers_path: Path, output_path: Path):
+    df = pd.read_csv(tickers_path, header=None)
+    tickers = df[1].to_list()
+    stock_data = {}
+
+    download_thread = Thread(target=download_stock_data_thread, args=(t, stock_data))
+    download_thread.start()
+
+    debug = 1
+
+
