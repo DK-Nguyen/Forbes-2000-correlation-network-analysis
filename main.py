@@ -27,8 +27,8 @@ def main(cfg: DictConfig):
                    output_path=stock_data_path)
     # plot_data_df(stock_data_path, tickers=['AAPL', 'MSFT', 'FB', 'GOOG', 'AMZN'])
 
-    correlation_path = PROJECT_DIR/'data/stock_correlations_v1.csv'
-    network_path = PROJECT_DIR/'data/stock_network_v1.gexf'
+    correlation_path = PROJECT_DIR/'data/stock_correlations_v2.csv'
+    network_path = PROJECT_DIR/'data/stock_network_v2.gexf'
     stock_network(stock_data_path, correlation_path, network_path)
 
 

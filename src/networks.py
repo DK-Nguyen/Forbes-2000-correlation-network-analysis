@@ -26,7 +26,7 @@ def stock_network(stock_data_path: Path, correlation_path: Path, network_path: P
         log.info(f'{network_path}, do nothing')
         return
 
-    log.info(f"constructing stock network based from data in {stock_data_path}")
+    log.info(f"constructing stock network based on data from {stock_data_path}")
     df = pd.read_csv(stock_data_path, index_col='Date')
     tickers = df.columns
 
@@ -35,14 +35,14 @@ def stock_network(stock_data_path: Path, correlation_path: Path, network_path: P
     correlations = {}
 
     alpha = 0.001
-    log.info(f'make an edge when |correlation| > 0.5')
     num_combinations = len(list(combinations(tickers, 2)))
     for ticker1, ticker2 in tqdm(combinations(tickers, 2), total=num_combinations):
         r, p = pearsonr(df[ticker1], df[ticker2])
         correlations[ticker1+'__'+ticker2] = r, p
         # if p < alpha:
-        if r > 0.5 or r < -0.5:
+        if r > 0.7 or r < -0.7:
             G.add_edge(ticker1, ticker2)
+    log.info(f'make an edge when |correlation| > 0.7')
 
     corr_result = pd.DataFrame.from_dict(correlations, orient='index')
     corr_result.columns = ['PCC', 'p-value']
