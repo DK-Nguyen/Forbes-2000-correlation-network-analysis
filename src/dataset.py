@@ -1,3 +1,4 @@
+from typing import List
 import pandas as pd
 import requests
 from pathlib import Path
@@ -7,7 +8,6 @@ from tqdm import tqdm
 import yfinance as yf
 import matplotlib.pyplot as plt
 from copy import deepcopy
-from threading import Thread
 import pdb
 import traceback
 import sys
@@ -164,11 +164,12 @@ def process_tickers(tickers_path: Path, output_path: Path):
     output.to_csv(output_path, header=False, index=False)
 
 
-def get_stock_data(tickers_path: Path, output_path: Path):
+def get_stock_data(tickers_path: Path, output_path: Path, fill_na=False):
     """
     Get the stock data for the companies with tickers in in the tickers_path
     :param tickers_path:
     :param output_path:
+    :param fill_na:
     :return:
     """
     if output_path.exists():
@@ -178,11 +179,8 @@ def get_stock_data(tickers_path: Path, output_path: Path):
     df = pd.read_csv(tickers_path, header=None)
     tickers = df[1].to_list()
 
-    # index = download_stock_data(tickers[0]).index.to_list()
-    # stock_data = {}
     stocks = []
     for t in tqdm(tickers):
-        # stock_data[t] = download_stock_data(t)
         df_t = pd.DataFrame(download_stock_data(t))
         df_t.rename(columns={'Open': t}, inplace=True)
         if len(df_t) > 0:
@@ -190,15 +188,10 @@ def get_stock_data(tickers_path: Path, output_path: Path):
         else:
             log.info(f"No stock data found for {t}. Skip it")
 
-    # remove entries with no data downloaded
-    # stock_data2 = {}
-    # for key, value in stock_data.items():
-    #     if len(value) > 0:
-    #         stock_data2[key] = value
-
     try:
         output_df = reduce(lambda left, right: left.merge(right, how='left', on='Date'), stocks)
-        output_df.fillna(0, inplace=True)
+        if fill_na:
+            output_df.fillna(0, inplace=True)
         output_df.to_csv(output_path, header=True, index=True)
         log.info(f"Save stock data of tickers to {output_path}")
     except Exception as e:
@@ -213,19 +206,11 @@ def download_stock_data(ticker: str):
     return data['Open']
 
 
-def download_stock_data_thread(ticker: str, stock_data):
-    data = yf.download(tickers=ticker, period="10y", interval="1d")
-    stock_data[ticker] = data['Open']
-
-
-def get_stock_data_thread(tickers_path: Path, output_path: Path):
-    df = pd.read_csv(tickers_path, header=None)
-    tickers = df[1].to_list()
-    stock_data = {}
-
-    download_thread = Thread(target=download_stock_data_thread, args=(t, stock_data))
-    download_thread.start()
-
-    debug = 1
-
-
+def plot_data_df(df_path: Path, tickers: List):
+    df = pd.read_csv(df_path, index_col='Date')
+    plt.xlabel('Date')
+    plt.ylabel('')
+    for t in tickers:
+        # if in debug mode, then use plt.ion()
+        df[t].plot(legend=True)
+    plt.show()
