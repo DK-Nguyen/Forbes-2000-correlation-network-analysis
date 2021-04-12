@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 import pandas as pd
 import requests
 from pathlib import Path
@@ -17,7 +17,7 @@ from functools import reduce
 log = logging.getLogger(__name__)
 
 
-def scraping_forbes_2000(output_path: str):
+def scraping_forbes_2000(output_path: Union[str, Path]):
     """
     Get the data of 2000 companies from https://www.forbes.com/global2000/ and save to csv file
     :param output_path: the path to save the .csv file to

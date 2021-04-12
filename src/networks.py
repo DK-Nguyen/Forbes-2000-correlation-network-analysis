@@ -40,13 +40,12 @@ def stock_network(stock_data_path: Path, correlation_path: Path, network_path: P
         r, p = pearsonr(df[ticker1], df[ticker2])
         correlations[ticker1+'__'+ticker2] = r, p
         # if p < alpha:
-        if r > 0.7 or r < -0.7:
+        if r > 0.8:
             G.add_edge(ticker1, ticker2)
-    log.info(f'make an edge when |correlation| > 0.7')
+    log.info(f'make an edge when correlation > 0.8')
 
     corr_result = pd.DataFrame.from_dict(correlations, orient='index')
     corr_result.columns = ['PCC', 'p-value']
-    nx.draw(G, node_size=50)
 
     log.info(f'number of nodes: {G.number_of_nodes()}')
     log.info(f'number of links: {G.number_of_edges()}')
